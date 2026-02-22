@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terraforming Mars — Panopticon v0.2</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; cursor: none; }
+canvas { display: block; }
+
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 20px; pointer-events: none; z-index: 10;
+}
+#hud-left, #hud-right {
+  background: rgba(0,0,0,0.65);
+  border: 1px solid rgba(255,120,50,0.25);
+  padding: 12px 16px;
+  color: #ff8844;
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 3px;
+  backdrop-filter: blur(4px);
+  text-shadow: 0 0 8px rgba(255,100,30,0.3);
+}
+#hud-center {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,120,50,0.2);
+  padding: 8px 18px;
+  color: #cc7744;
+  font-size: 11px;
+  border-radius: 3px;
+  pointer-events: none; z-index: 10;
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+#energy-bar {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  width: 280px; height: 16px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,120,50,0.3);
+  border-radius: 8px;
+  overflow: hidden; z-index: 10;
+  backdrop-filter: blur(4px);
+}
+#energy-fill {
+  height: 100%; width: 78%;
+  background: linear-gradient(90deg, #cc3300, #ff6622, #ffaa44);
+  border-radius: 8px;
+  transition: width 0.8s ease;
+  box-shadow: 0 0 12px rgba(255,80,0,0.4);
+}
+#energy-label {
+  position: fixed; top: 38px; left: 50%; transform: translateX(-50%);
+  color: #cc7744; font-size: 10px; z-index: 10;
+  font-family: 'Courier New', monospace;
+  text-shadow: 0 0 6px rgba(255,100,30,0.3);
+}
+#ai-message {
+  position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,5,15,0.8);
+  border: 1px solid rgba(80,160,255,0.3);
+  padding: 14px 28px;
+  color: #88bbff;
+  font-size: 14px;
+  font-style: italic;
+  border-radius: 4px;
+  pointer-events: none; z-index: 10;
+  max-width: 520px; text-align: center;
+  opacity: 0; transition: opacity 2s;
+  backdrop-filter: blur(6px);
+  text-shadow: 0 0 10px rgba(80,160,255,0.3);
+}
+#view-indicator {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  color: #aa6633; font-size: 10px; z-index: 10;
+  text-transform: uppercase; letter-spacing: 3px;
+  text-shadow: 0 0 8px rgba(255,100,30,0.3);
+}
+#crosshair {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 24px; height: 24px; pointer-events: none; z-index: 10;
+}
+#crosshair::before, #crosshair::after {
+  content: ''; position: absolute; background: rgba(255,136,68,0.35);
+}
+#crosshair::before { width: 1px; height: 100%; left: 50%; }
+#crosshair::after { height: 1px; width: 100%; top: 50%; }
+#loading {
+  position: fixed; inset: 0; background: #000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #ff8844; font-size: 16px; z-index: 100;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 2px;
+}
+#loading-sub { color: #664422; font-size: 11px; margin-top: 12px; letter-spacing: 1px; }
+#loading-bar { width: 200px; height: 2px; background: #331100; margin-top: 20px; border-radius: 1px; overflow: hidden; }
+#loading-fill { width: 0%; height: 100%; background: #ff6622; transition: width 0.3s; }
+/* Scanline overlay */
+#scanlines {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.04) 2px,
+    rgba(0,0,0,0.04) 4px
+  );
+}
+/* Vignette */
+#vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 8;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.5) 100%);
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  TERRAFORMING MARS
+  <div id="loading-sub">PANOPTICON SYSTEMS INITIALIZING</div>
+  <div id="loading-bar"><div id="loading-fill"></div></div>
+</div>
+
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="hud">
+  <div id="hud-left">
+    PANOPTICON MODULE v0.2<br>
+    ──────────────────<br>
+    LAT: <span id="lat">18.65</span>°N<br>
+    LON: <span id="lon">226.2</span>°E<br>
+    ALT: <span id="alt">0</span>m<br>
+    TEMP: <span id="temp">-63</span>°C<br>
+    PRESSURE: 636 Pa
+  </div>
+  <div id="hud-right">
+    SOL: <span id="sol">001</span><br>
+    ──────────────<br>
+    TIME: <span id="time">06:00</span><br>
+    WIND: <span id="wind">12</span> km/h NW<br>
+    DUST: <span id="dust-level">LOW</span><br>
+    VISIBILITY: <span id="vis">18</span> km<br>
+    ROVER: <span id="rover-status">IDLE</span>
+  </div>
+</div>
+
+<div id="energy-bar"><div id="energy-fill"></div></div>
+<div id="energy-label">ENERGY: 78/100 kWh</div>
+<div id="view-indicator">PANOPTICON INTERIOR</div>
+
+<div id="crosshair"></div>
+<div id="ai-message"></div>
+
+<div id="hud-center">
+  [WASD] Move &nbsp;&nbsp; [Mouse] Look &nbsp;&nbsp; [Click] Command Rover &nbsp;&nbsp; [F] Cycle View (3 modes) &nbsp;&nbsp; [ESC] Release Mouse
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+// ═══════════════════════════════════════════════════════════
+//  SCENE
+// ═══════════════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x120600);
+scene.fog = new THREE.FogExp2(0x1a0800, 0.0012);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 6000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.75;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// ═══════════════════════════════════════════════════════════
+//  POST-PROCESSING
+// ═══════════════════════════════════════════════════════════
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.6, 0.85);
+composer.addPass(bloomPass);
+
+// Color grading shader — warm Mars tint
+const ColorGradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    warmth: { value: 0.12 },
+    contrast: { value: 1.08 },
+    brightness: { value: 0.0 },
+    vignetteIntensity: { value: 0.35 }
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float warmth, contrast, brightness, vignetteIntensity;
+    varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      // warmth
+      c.r += warmth * 0.5;
+      c.g += warmth * 0.15;
+      c.b -= warmth * 0.15;
+      // contrast + brightness
+      c.rgb = (c.rgb - 0.5) * contrast + 0.5 + brightness;
+      // vignette
+      vec2 vc = vUv - 0.5;
+      float vf = 1.0 - dot(vc, vc) * vignetteIntensity * 2.0;
+      c.rgb *= vf;
+      gl_FragColor = c;
+    }
+  `
+};
+composer.addPass(new ShaderPass(ColorGradeShader));
+
+// ═══════════════════════════════════════════════════════════
+//  LIGHTING
+// ═══════════════════════════════════════════════════════════
+const ambientLight = new THREE.AmbientLight(0x442200, 0.35);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffaa66, 2.0);
+sunLight.position.set(300, 200, 150);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(4096, 4096);
+sunLight.shadow.camera.left = -300;
+sunLight.shadow.camera.right = 300;
+sunLight.shadow.camera.top = 300;
+sunLight.shadow.camera.bottom = -300;
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 800;
+sunLight.shadow.bias = -0.0003;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x331100, 0.4);
+fillLight.position.set(-150, 60, -120);
+scene.add(fillLight);
+
+// Hemisphere light for subtle sky bounce
+const hemiLight = new THREE.HemisphereLight(0x553311, 0x221100, 0.25);
+scene.add(hemiLight);
+
+// ═══════════════════════════════════════════════════════════
+//  MARS SKY
+// ═══════════════════════════════════════════════════════════
+const skyGeo = new THREE.SphereGeometry(3000, 64, 32);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    sunPos: { value: new THREE.Vector3(300, 200, 150) },
+    time: { value: 0 }
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 sunPos;
+    uniform float time;
+    varying vec3 vWorldPos;
+    void main() {
+      vec3 dir = normalize(vWorldPos);
+      float h = dir.y;
+      // Mars atmosphere gradient
+      vec3 zenith = vec3(0.06, 0.02, 0.01);
+      vec3 horizon = vec3(0.35, 0.18, 0.08);
+      vec3 ground = vec3(0.12, 0.05, 0.02);
+      vec3 col;
+      if (h > 0.0) {
+        col = mix(horizon, zenith, pow(h, 0.35));
+      } else {
+        col = mix(horizon, ground, pow(-h, 0.5));
+      }
+      // Sun glow
+      vec3 sunDir = normalize(sunPos);
+      float sunDot = max(dot(dir, sunDir), 0.0);
+      col += vec3(0.8, 0.5, 0.2) * pow(sunDot, 64.0) * 0.8;
+      col += vec3(0.4, 0.2, 0.08) * pow(sunDot, 8.0) * 0.3;
+      // Subtle haze bands
+      col += vec3(0.05, 0.025, 0.01) * sin(h * 20.0 + time * 0.1) * 0.3;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// ═══════════════════════════════════════════════════════════
+//  MARS TERRAIN — Enhanced
+// ═══════════════════════════════════════════════════════════
+const terrainSize = 800;
+const terrainSegments = 256;
+const terrainMaxHeight = 50;
+
+// Simple hash for noise
+function hash(x, y) {
+  let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function smoothNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix + 1, iy);
+  const c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+function fbm(x, y, octaves) {
+  let v = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    v += smoothNoise(x * freq, y * freq) * amp;
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return v;
+}
+
+function generateTerrain(w, h) {
+  const data = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / w, v = y / h;
+      let elev = fbm(u * 8, v * 8, 8) * 0.6;
+      elev += fbm(u * 3 + 10, v * 3 + 20, 4) * 0.3;
+      // Ridge noise (absolute value creates ridges)
+      elev += Math.abs(fbm(u * 5 + 50, v * 5 + 50, 5) - 0.5) * 0.25;
+      data[y * w + x] = elev;
+    }
+  }
+  // Craters
+  const craters = [
+    { cx: 0.25, cy: 0.35, r: 0.09, d: 0.4 },
+    { cx: 0.7,  cy: 0.55, r: 0.07, d: 0.35 },
+    { cx: 0.5,  cy: 0.15, r: 0.12, d: 0.45 },
+    { cx: 0.12, cy: 0.78, r: 0.05, d: 0.28 },
+    { cx: 0.85, cy: 0.25, r: 0.045, d: 0.22 },
+    { cx: 0.6,  cy: 0.82, r: 0.08, d: 0.35 },
+    { cx: 0.38, cy: 0.62, r: 0.035, d: 0.18 },
+    { cx: 0.18, cy: 0.18, r: 0.04, d: 0.2 },
+    { cx: 0.55, cy: 0.45, r: 0.025, d: 0.12 },
+    { cx: 0.75, cy: 0.8,  r: 0.03, d: 0.15 },
+    { cx: 0.9,  cy: 0.65, r: 0.02, d: 0.1 },
+    { cx: 0.42, cy: 0.88, r: 0.055, d: 0.28 },
+  ];
+  for (const c of craters) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const u = x / w, v = y / h;
+        const dx = u - c.cx, dy = v - c.cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const nr = dist / c.r;
+        if (nr < 1) {
+          const s = nr * nr;
+          data[y * w + x] += c.d * (s - 1);
+        } else if (nr < 1.5) {
+          const t = (nr - 1) / 0.5;
+          const rim = c.d * 0.2 * Math.exp(-t * t * 4);
+          data[y * w + x] += rim;
+        }
+      }
+    }
+  }
+  // Normalize
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < data.length; i++) { mn = Math.min(mn, data[i]); mx = Math.max(mx, data[i]); }
+  for (let i = 0; i < data.length; i++) { data[i] = (data[i] - mn) / (mx - mn); }
+  return data;
+}
+
+const heightData = generateTerrain(terrainSegments + 1, terrainSegments + 1);
+
+const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
+terrainGeo.rotateX(-Math.PI / 2);
+
+const tPos = terrainGeo.attributes.position;
+for (let i = 0; i < tPos.count; i++) {
+  tPos.setY(i, heightData[i] * terrainMaxHeight);
+}
+terrainGeo.computeVertexNormals();
+
+// Terrain shader material for realistic Mars look
+const terrainShaderMat = new THREE.ShaderMaterial({
+  lights: true,
+  uniforms: {
+    ...THREE.UniformsLib.lights,
+    maxHeight: { value: terrainMaxHeight },
+  },
+  vertexShader: `
+    #include <common>
+    #include <shadowmap_pars_vertex>
+    varying vec3 vPos;
+    varying vec3 vNormal2;
+    varying float vHeight;
+    void main(){
+      vPos = (modelMatrix * vec4(position, 1.0)).xyz;
+      vNormal2 = normalize(normalMatrix * normal);
+      vHeight = position.y;
+      vec4 mvp = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mvp;
+      #include <shadowmap_vertex>
+    }
+  `,
+  fragmentShader: `
+    #include <common>
+    #include <packing>
+    #include <lights_pars_begin>
+    #include <shadowmap_pars_fragment>
+    uniform float maxHeight;
+    varying vec3 vPos;
+    varying vec3 vNormal2;
+    varying float vHeight;
+    void main(){
+      float h = vHeight / maxHeight;
+      // Mars color palette
+      vec3 low   = vec3(0.28, 0.10, 0.04);   // dark oxide
+      vec3 mid   = vec3(0.52, 0.24, 0.10);   // rust
+      vec3 high  = vec3(0.65, 0.38, 0.18);   // tan
+      vec3 peak  = vec3(0.75, 0.55, 0.35);   // light dust
+      vec3 col;
+      if (h < 0.3) col = mix(low, mid, h / 0.3);
+      else if (h < 0.6) col = mix(mid, high, (h - 0.3) / 0.3);
+      else col = mix(high, peak, (h - 0.6) / 0.4);
+      // Slope darkening
+      float slope = 1.0 - max(dot(vNormal2, vec3(0,1,0)), 0.0);
+      col *= 1.0 - slope * 0.4;
+      // Micro variation
+      float n = fract(sin(dot(vPos.xz * 0.1, vec2(127.1, 311.7))) * 43758.5453);
+      col += (n - 0.5) * 0.04;
+      // Simple directional lighting
+      vec3 lightDir = normalize(vec3(300.0, 200.0, 150.0));
+      float diff = max(dot(vNormal2, lightDir), 0.0);
+      vec3 ambient = col * 0.3;
+      vec3 diffuse = col * diff * 0.8;
+      gl_FragColor = vec4(ambient + diffuse, 1.0);
+    }
+  `
+});
+
+const terrain = new THREE.Mesh(terrainGeo, terrainShaderMat);
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+function getTerrainHeight(wx, wz) {
+  const u = (wx / terrainSize) + 0.5;
+  const v = (wz / terrainSize) + 0.5;
+  const gx = Math.min(terrainSegments, Math.max(0, Math.floor(u * terrainSegments)));
+  const gy = Math.min(terrainSegments, Math.max(0, Math.floor(v * terrainSegments)));
+  // Bilinear interpolation
+  const gx1 = Math.min(terrainSegments, gx + 1);
+  const gy1 = Math.min(terrainSegments, gy + 1);
+  const fx = u * terrainSegments - gx;
+  const fy = v * terrainSegments - gy;
+  const h00 = heightData[gy * (terrainSegments + 1) + gx] || 0;
+  const h10 = heightData[gy * (terrainSegments + 1) + gx1] || 0;
+  const h01 = heightData[gy1 * (terrainSegments + 1) + gx] || 0;
+  const h11 = heightData[gy1 * (terrainSegments + 1) + gx1] || 0;
+  const h = h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) + h01 * (1 - fx) * fy + h11 * fx * fy;
+  return h * terrainMaxHeight;
+}
+
+// Rocks scattered on terrain
+const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x443322, roughness: 0.95, metalness: 0.05, flatShading: true });
+
+for (let i = 0; i < 400; i++) {
+  const rx = (Math.random() - 0.5) * terrainSize * 0.85;
+  const rz = (Math.random() - 0.5) * terrainSize * 0.85;
+  const ry = getTerrainHeight(rx, rz);
+  const scale = 0.15 + Math.random() * 0.8;
+  const rock = new THREE.Mesh(rockGeo, rockMat);
+  rock.position.set(rx, ry + scale * 0.3, rz);
+  rock.scale.set(scale, scale * (0.5 + Math.random() * 0.7), scale);
+  rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * 0.5);
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  scene.add(rock);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PANOPTICON MODULE — Enhanced
+// ═══════════════════════════════════════════════════════════
+const panopticon = new THREE.Group();
+const panRadius = 6;
+const panHeight = 3.4;
+
+const metalDark = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.5, metalness: 0.8 });
+const metalLight = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.4, metalness: 0.7 });
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x88bbff, roughness: 0.05, metalness: 0.1,
+  transparent: true, opacity: 0.2, transmission: 0.6,
+  side: THREE.DoubleSide, envMapIntensity: 0.5
+});
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.65, metalness: 0.6, side: THREE.DoubleSide });
+const frameMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.85 });
+const panelDark = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3, metalness: 0.7 });
+const emissiveOrange = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff4400, emissiveIntensity: 0.8, roughness: 0.3 });
+const emissiveBlue = new THREE.MeshStandardMaterial({ color: 0x4488ff, emissive: 0x2266ff, emissiveIntensity: 0.6, roughness: 0.3 });
+const emissiveGreen = new THREE.MeshStandardMaterial({ color: 0x44ff66, emissive: 0x22ff44, emissiveIntensity: 0.4, roughness: 0.3 });
+const emissiveRed = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff0000, emissiveIntensity: 0.5, roughness: 0.3 });
+
+// Floor with grating pattern
+const floorGeo = new THREE.CylinderGeometry(panRadius, panRadius, 0.12, 48);
+const floorMesh = new THREE.Mesh(floorGeo, metalDark);
+floorMesh.receiveShadow = true;
+panopticon.add(floorMesh);
+
+// Floor ring detail
+const ringGeo = new THREE.TorusGeometry(panRadius - 0.5, 0.04, 8, 48);
+const ringMesh = new THREE.Mesh(ringGeo, metalLight);
+ringMesh.rotation.x = Math.PI / 2;
+ringMesh.position.y = 0.07;
+panopticon.add(ringMesh);
+
+// Ceiling with structural beams
+const ceilGeo2 = new THREE.CylinderGeometry(panRadius, panRadius, 0.1, 48);
+const ceilMesh = new THREE.Mesh(ceilGeo2, metalDark);
+ceilMesh.position.y = panHeight;
+ceilMesh.castShadow = true;
+panopticon.add(ceilMesh);
+
+// Radial ceiling beams
+for (let i = 0; i < 8; i++) {
+  const angle = (i / 8) * Math.PI * 2;
+  const beamGeo = new THREE.BoxGeometry(0.08, 0.12, panRadius);
+  const beam = new THREE.Mesh(beamGeo, metalLight);
+  beam.position.set(Math.sin(angle) * panRadius * 0.5, panHeight - 0.06, Math.cos(angle) * panRadius * 0.5);
+  beam.rotation.y = -angle;
+  panopticon.add(beam);
+}
+
+// Walls with windows
+const segs = 32;
+const winCount = 12;
+const aStep = (Math.PI * 2) / segs;
+const wStep = Math.floor(segs / winCount);
+
+for (let i = 0; i < segs; i++) {
+  const a = i * aStep + aStep / 2;
+  const x = Math.sin(a) * panRadius;
+  const z = Math.cos(a) * panRadius;
+  const aw = aStep * panRadius;
+  const isWin = (i % wStep === 0);
+
+  if (isWin) {
+    // Frame
+    const fg = new THREE.BoxGeometry(1.8, 1.3, 0.18);
+    const f = new THREE.Mesh(fg, frameMat);
+    f.position.set(x, 1.7, z); f.lookAt(0, 1.7, 0);
+    f.castShadow = true;
+    panopticon.add(f);
+    // Glass
+    const gg = new THREE.BoxGeometry(1.55, 1.05, 0.04);
+    const g = new THREE.Mesh(gg, glassMat);
+    g.position.set(x, 1.7, z); g.lookAt(0, 1.7, 0);
+    panopticon.add(g);
+    // Sub-frame bars (horizontal)
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.03, 0.05), frameMat);
+    bar.position.set(x, 1.7, z); bar.lookAt(0, 1.7, 0);
+    panopticon.add(bar);
+  } else {
+    const wg = new THREE.BoxGeometry(aw, panHeight, 0.2);
+    const w = new THREE.Mesh(wg, wallMat);
+    w.position.set(x, panHeight / 2, z); w.lookAt(0, panHeight / 2, 0);
+    w.castShadow = true;
+    panopticon.add(w);
+  }
+}
+
+// ─── Interior furniture ───
+
+// Main console desk (curved feeling with boxes)
+for (let i = -2; i <= 2; i++) {
+  const angle = (i * 0.12) + Math.PI;
+  const cx = Math.sin(angle) * 3.2;
+  const cz = Math.cos(angle) * 3.2;
+  const cg = new THREE.BoxGeometry(1.2, 0.75, 0.7);
+  const cm = new THREE.Mesh(cg, panelDark);
+  cm.position.set(cx, 0.375, cz);
+  cm.lookAt(0, 0.375, 0);
+  panopticon.add(cm);
+}
+
+// Multiple screens on console
+for (let i = -2; i <= 2; i++) {
+  const angle = (i * 0.12) + Math.PI;
+  const sx = Math.sin(angle) * 3.0;
+  const sz = Math.cos(angle) * 3.0;
+  const sg = new THREE.PlaneGeometry(0.9, 0.45);
+  const mat = i === 0 ? emissiveOrange : (i % 2 === 0 ? emissiveBlue : emissiveGreen);
+  const sm = new THREE.Mesh(sg, mat);
+  sm.position.set(sx, 0.9, sz);
+  sm.lookAt(0, 0.9, 0);
+  panopticon.add(sm);
+}
+
+// Status lights along walls
+for (let i = 0; i < 16; i++) {
+  const a = (i / 16) * Math.PI * 2;
+  const lx = Math.sin(a) * (panRadius - 0.15);
+  const lz = Math.cos(a) * (panRadius - 0.15);
+  const lg = new THREE.BoxGeometry(0.06, 0.06, 0.02);
+  const lm = new THREE.Mesh(lg, i % 4 === 0 ? emissiveRed : emissiveGreen);
+  lm.position.set(lx, 2.8, lz);
+  lm.lookAt(0, 2.8, 0);
+  panopticon.add(lm);
+}
+
+// Central holographic projector table
+const projGeo = new THREE.CylinderGeometry(0.6, 0.8, 0.15, 16);
+const projMesh = new THREE.Mesh(projGeo, metalLight);
+projMesh.position.set(0, 0.08, 0.5);
+panopticon.add(projMesh);
+
+// Hologram glow ring
+const holoRing = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.02, 8, 32), emissiveBlue);
+holoRing.position.set(0, 0.18, 0.5);
+holoRing.rotation.x = Math.PI / 2;
+panopticon.add(holoRing);
+
+// Chair
+const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.6), metalDark);
+chairSeat.position.set(0, 0.55, 0.5);
+panopticon.add(chairSeat);
+const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.08), metalDark);
+chairBack.position.set(0, 0.9, 0.8);
+panopticon.add(chairBack);
+const chairBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.55, 8), metalLight);
+chairBase.position.set(0, 0.28, 0.5);
+panopticon.add(chairBase);
+
+// Interior lights
+const intLight1 = new THREE.PointLight(0xff7733, 0.5, 12);
+intLight1.position.set(0, 3.0, 0);
+panopticon.add(intLight1);
+
+const intLight2 = new THREE.PointLight(0x4488ff, 0.2, 8);
+intLight2.position.set(0, 1.0, -3.0);
+panopticon.add(intLight2);
+
+// Exterior base structure (legs/supports)
+for (let i = 0; i < 6; i++) {
+  const a = (i / 6) * Math.PI * 2;
+  const legGeo = new THREE.BoxGeometry(0.15, 1.2, 0.15);
+  const leg = new THREE.Mesh(legGeo, metalDark);
+  leg.position.set(Math.sin(a) * (panRadius + 0.3), -0.6, Math.cos(a) * (panRadius + 0.3));
+  leg.rotation.z = (Math.random() - 0.5) * 0.05;
+  panopticon.add(leg);
+}
+
+// External antenna
+const extAntennaGeo = new THREE.CylinderGeometry(0.03, 0.03, 3, 6);
+const extAntenna = new THREE.Mesh(extAntennaGeo, metalLight);
+extAntenna.position.set(panRadius + 1, panHeight + 1.5, 0);
+panopticon.add(extAntenna);
+const extDish = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), metalLight);
+extDish.position.set(panRadius + 1, panHeight + 3.0, 0);
+panopticon.add(extDish);
+
+// Solar panels outside
+for (let side of [-1, 1]) {
+  const spGroup = new THREE.Group();
+  const spPanel = new THREE.Mesh(new THREE.BoxGeometry(3, 0.04, 1.5),
+    new THREE.MeshStandardMaterial({ color: 0x0a1533, roughness: 0.2, metalness: 0.6 }));
+  spGroup.add(spPanel);
+  // Panel frame
+  const spFrame = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.08, 1.6), frameMat);
+  spFrame.position.y = -0.01;
+  spGroup.add(spFrame);
+  // Support arm
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 2), metalLight);
+  arm.position.set(0, -0.1, -1.5);
+  arm.rotation.x = 0.3;
+  spGroup.add(arm);
+
+  spGroup.position.set(side * (panRadius + 3), 1.5, 0);
+  spGroup.rotation.z = side * 0.15;
+  panopticon.add(spGroup);
+}
+
+const panX = 0, panZ = 0;
+const panY = getTerrainHeight(panX, panZ) + 1.2;
+panopticon.position.set(panX, panY, panZ);
+scene.add(panopticon);
+
+// ═══════════════════════════════════════════════════════════
+//  ROVER — Highly Detailed
+// ═══════════════════════════════════════════════════════════
+const rover = new THREE.Group();
+
+const roverMetal = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.35, metalness: 0.7 });
+const roverGold = new THREE.MeshStandardMaterial({ color: 0xccaa44, roughness: 0.3, metalness: 0.8 }); // thermal foil
+const roverBlack = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6, metalness: 0.5 });
+const roverWheelMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.85, metalness: 0.6 });
+
+// Main body — warm electronics box
+const bodyGeo = new THREE.BoxGeometry(1.4, 0.45, 2.2);
+const body = new THREE.Mesh(bodyGeo, roverGold);
+body.position.y = 0.65;
+body.castShadow = true;
+rover.add(body);
+
+// Top deck
+const deckGeo = new THREE.BoxGeometry(1.5, 0.06, 2.3);
+const deck = new THREE.Mesh(deckGeo, roverMetal);
+deck.position.y = 0.91;
+deck.castShadow = true;
+rover.add(deck);
+
+// Bottom chassis
+const chassisGeo = new THREE.BoxGeometry(1.2, 0.08, 2.0);
+const chassis = new THREE.Mesh(chassisGeo, roverBlack);
+chassis.position.y = 0.4;
+rover.add(chassis);
+
+// ─── Rocker-Bogie Suspension (6 wheels) ───
+function createWheel() {
+  const wGroup = new THREE.Group();
+  // Tire
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.18, 24), roverWheelMat);
+  tire.rotation.z = Math.PI / 2;
+  wGroup.add(tire);
+  // Treads (raised bands)
+  for (let t = 0; t < 12; t++) {
+    const tAngle = (t / 12) * Math.PI * 2;
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.02, 0.04), roverBlack);
+    tread.position.set(0, Math.sin(tAngle) * 0.22, Math.cos(tAngle) * 0.22);
+    tread.rotation.x = tAngle;
+    wGroup.add(tread);
+  }
+  // Hub
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.2, 8), roverMetal);
+  hub.rotation.z = Math.PI / 2;
+  wGroup.add(hub);
+  return wGroup;
+}
+
+function createSuspensionArm(length) {
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, length), roverMetal);
+  return arm;
+}
+
+// Wheel positions: 6 wheels, 3 per side (front, mid, rear)
+const wheelSetup = [
+  // Left side
+  { x: -0.85, z: -0.85, side: -1 }, // front left
+  { x: -0.85, z: 0,     side: -1 }, // mid left
+  { x: -0.85, z: 0.85,  side: -1 }, // rear left
+  // Right side
+  { x: 0.85, z: -0.85,  side: 1 },  // front right
+  { x: 0.85, z: 0,      side: 1 },  // mid right
+  { x: 0.85, z: 0.85,   side: 1 },  // rear right
+];
+
+const roverWheels = [];
+for (const ws of wheelSetup) {
+  const w = createWheel();
+  w.position.set(ws.x, 0.22, ws.z);
+  rover.add(w);
+  roverWheels.push(w);
+  // Suspension arm
+  const arm = createSuspensionArm(0.4);
+  arm.position.set(ws.x * 0.5, 0.35, ws.z);
+  rover.add(arm);
+}
+
+// ─── Mast (camera/instrument head) ───
+const mastGroup = new THREE.Group();
+// Mast pole
+const mastPole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.4, 8), roverMetal);
+mastPole.position.y = 0.7;
+mastGroup.add(mastPole);
+// Mast head
+const mastHead = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.2), roverBlack);
+mastHead.position.y = 1.45;
+mastGroup.add(mastHead);
+// Camera eyes (stereo)
+for (let side of [-1, 1]) {
+  const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.08, 12), roverBlack);
+  eye.rotation.x = Math.PI / 2;
+  eye.position.set(side * 0.08, 1.45, -0.14);
+  mastGroup.add(eye);
+  // Lens
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.035, 12),
+    new THREE.MeshStandardMaterial({ color: 0x224488, emissive: 0x112244, emissiveIntensity: 0.3, roughness: 0.1 }));
+  lens.position.set(side * 0.08, 1.45, -0.19);
+  mastGroup.add(lens);
+}
+mastGroup.position.set(0, 0.91, -0.7);
+rover.add(mastGroup);
+
+// ─── High-Gain Antenna ───
+const hgaGroup = new THREE.Group();
+const hgaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6), roverMetal);
+hgaMast.position.y = 0.3;
+hgaGroup.add(hgaMast);
+const hgaDish = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 3), roverMetal);
+hgaDish.position.y = 0.65;
+hgaDish.rotation.x = Math.PI;
+hgaGroup.add(hgaDish);
+hgaGroup.position.set(0.4, 0.91, 0.5);
+rover.add(hgaGroup);
+
+// ─── Low-Gain Antenna ───
+const lgaAnt = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.0, 6), roverMetal);
+lgaAnt.position.set(-0.4, 1.41, 0.5);
+rover.add(lgaAnt);
+const lgaTop = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), roverMetal);
+lgaTop.position.set(-0.4, 1.95, 0.5);
+rover.add(lgaTop);
+
+// ─── Solar Panels (two wings) ───
+for (let side of [-1, 1]) {
+  const spg = new THREE.Group();
+  const sp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.03, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x0a1533, roughness: 0.15, metalness: 0.5 }));
+  spg.add(sp);
+  // Panel cells texture (grid lines)
+  for (let g = 0; g < 6; g++) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.035, 0.005), roverBlack);
+    line.position.z = -0.5 + g * 0.2;
+    spg.add(line);
+  }
+  for (let g = 0; g < 8; g++) {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.035, 1.2), roverBlack);
+    line.position.x = -0.7 + g * 0.2;
+    spg.add(line);
+  }
+  // Hinge
+  const hinge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.15), roverMetal);
+  hinge.position.set(-side * 0.85, 0, 0);
+  spg.add(hinge);
+
+  spg.position.set(side * 1.55, 0.94, 0);
+  rover.add(spg);
+}
+
+// ─── Instrument Arm (front) ───
+const armGroup = new THREE.Group();
+const arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.8), roverMetal);
+arm1.position.z = -0.4;
+armGroup.add(arm1);
+const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), roverMetal);
+arm2.position.set(0, -0.25, -0.8);
+armGroup.add(arm2);
+// Drill head
+const drill = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 8), roverMetal);
+drill.position.set(0, -0.55, -0.8);
+drill.rotation.x = Math.PI;
+armGroup.add(drill);
+armGroup.position.set(0.3, 0.91, -0.8);
+armGroup.rotation.x = 0.2;
+rover.add(armGroup);
+
+// Rover headlight
+const roverLight = new THREE.SpotLight(0xffffff, 0.8, 30, 0.5, 0.5, 1);
+roverLight.position.set(0, 1.0, -1.2);
+roverLight.target.position.set(0, 0, -5);
+rover.add(roverLight);
+rover.add(roverLight.target);
+
+// First person camera mount point (on mast)
+const roverCamMount = new THREE.Object3D();
+roverCamMount.position.set(0, 2.4, -0.7);
+rover.add(roverCamMount);
+
+const roverStartX = 18, roverStartZ = 12;
+rover.position.set(roverStartX, getTerrainHeight(roverStartX, roverStartZ), roverStartZ);
+scene.add(rover);
+
+// Rover target marker — animated ring
+const markerGeo = new THREE.TorusGeometry(0.5, 0.06, 8, 24);
+const markerMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.7 });
+const marker = new THREE.Mesh(markerGeo, markerMat);
+marker.rotation.x = Math.PI / 2;
+marker.visible = false;
+scene.add(marker);
+
+// Second ring
+const marker2 = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.03, 8, 24),
+  new THREE.MeshBasicMaterial({ color: 0xff6622, transparent: true, opacity: 0.4 }));
+marker2.rotation.x = Math.PI / 2;
+marker2.visible = false;
+scene.add(marker2);
+
+// Rover trail particles
+const trailMax = 200;
+const trailGeo = new THREE.BufferGeometry();
+const trailPositions = new Float32Array(trailMax * 3);
+const trailAlphas = new Float32Array(trailMax);
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+const trailMat = new THREE.PointsMaterial({ color: 0x886644, size: 0.15, transparent: true, opacity: 0.4 });
+const trail = new THREE.Points(trailGeo, trailMat);
+scene.add(trail);
+let trailIdx = 0;
+let trailTimer = 0;
+
+// ═══════════════════════════════════════════════════════════
+//  CAMERA SYSTEM — 3 MODES
+// ═══════════════════════════════════════════════════════════
+// 0 = Panopticon interior
+// 1 = Rover third person (follow)
+// 2 = Rover first person (mast cam)
+let viewMode = 0;
+const viewNames = ['PANOPTICON INTERIOR', 'ROVER — THIRD PERSON', 'ROVER — FIRST PERSON'];
+
+camera.position.set(panX, panY + 1.6, panZ);
+
+const keys = {};
+let yaw = 0, pitch = 0;
+let isPointerLocked = false;
+
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'f') {
+    viewMode = (viewMode + 1) % 3;
+    document.getElementById('view-indicator').textContent = viewNames[viewMode];
+    if (viewMode === 0) {
+      camera.position.set(panX, panY + 1.6, panZ);
+      yaw = 0; pitch = 0;
+      showAiMessage("Sei tornato nella capsula. Il mondo e' la' fuori.");
+    } else if (viewMode === 1) {
+      showAiMessage("Vista esterna. Segui il rover su Marte.");
+    } else {
+      showAiMessage("Visione dal mast del rover. Sei i suoi occhi.");
+    }
+  }
+});
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+document.addEventListener('pointerlockchange', () => {
+  isPointerLocked = document.pointerLockElement === renderer.domElement;
+  document.body.style.cursor = isPointerLocked ? 'none' : 'default';
+});
+document.addEventListener('mousemove', e => {
+  if (!isPointerLocked) return;
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-1.2, Math.min(1.2, pitch));
+});
+
+// Rover click-to-move
+const raycaster = new THREE.Raycaster();
+let roverTarget = null;
+let roverHasTarget = false;
+const roverSpeed = 5;
+const roverTurnSpeed = 2.5;
+
+document.addEventListener('mousedown', e => {
+  if (e.button !== 0 || !isPointerLocked) return;
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hits = raycaster.intersectObject(terrain);
+  if (hits.length > 0) {
+    roverTarget = hits[0].point.clone();
+    roverHasTarget = true;
+    marker.position.set(roverTarget.x, roverTarget.y + 0.15, roverTarget.z);
+    marker2.position.copy(marker.position);
+    marker.visible = true;
+    marker2.visible = true;
+    document.getElementById('rover-status').textContent = 'MOVING';
+    energy -= 0.3;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  DUST PARTICLES — Enhanced
+// ═══════════════════════════════════════════════════════════
+const dustCount = 4000;
+const dustGeo2 = new THREE.BufferGeometry();
+const dustPos = new Float32Array(dustCount * 3);
+const dustSizes = new Float32Array(dustCount);
+const dustSpeeds2 = new Float32Array(dustCount);
+
+for (let i = 0; i < dustCount; i++) {
+  dustPos[i * 3] = (Math.random() - 0.5) * 500;
+  dustPos[i * 3 + 1] = Math.random() * 40;
+  dustPos[i * 3 + 2] = (Math.random() - 0.5) * 500;
+  dustSizes[i] = 0.1 + Math.random() * 0.3;
+  dustSpeeds2[i] = 0.3 + Math.random() * 0.8;
+}
+dustGeo2.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+dustGeo2.setAttribute('size', new THREE.BufferAttribute(dustSizes, 1));
+
+const dustMat2 = new THREE.PointsMaterial({
+  color: 0x997755, size: 0.2, transparent: true, opacity: 0.2,
+  sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const dust = new THREE.Points(dustGeo2, dustMat2);
+scene.add(dust);
+
+// Ground haze plane
+const hazeGeo = new THREE.PlaneGeometry(terrainSize * 2, terrainSize * 2);
+const hazeMat = new THREE.MeshBasicMaterial({
+  color: 0x331100, transparent: true, opacity: 0.08,
+  side: THREE.DoubleSide, depthWrite: false
+});
+const haze = new THREE.Mesh(hazeGeo, hazeMat);
+haze.rotation.x = Math.PI / 2;
+haze.position.y = 2;
+scene.add(haze);
+
+// ═══════════════════════════════════════════════════════════
+//  AI & SYSTEMS
+// ═══════════════════════════════════════════════════════════
+const aiMessages = [
+  "La superficie e' silenziosa. Ma non vuota.",
+  "Cosa costruirai qui, dove nessuno ha mai costruito?",
+  "Il rover si muove. Tu resti. Questa e' la tua forza.",
+  "Ogni cratere ha una storia. Tu puoi dargli un nome.",
+  "L'energia scende. Il tempo e' una risorsa.",
+  "Qualcuno prima di te ha guardato questo orizzonte. Non da qui.",
+  "Marte non ti aspettava. Ma adesso sei qui.",
+  "Cosa vedi quando guardi fuori dalla finestra?",
+  "Il silenzio qui ha un peso diverso.",
+  "Sei fragile. Ma sei l'unico.",
+  "La polvere copre tutto. Ma tu lasci tracce.",
+  "Nessuna mappa civile esiste ancora. Sei il primo cartografo.",
+];
+let aiTimer = 0;
+function showAiMessage(text) {
+  const el = document.getElementById('ai-message');
+  el.textContent = text;
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0', 7000);
+}
+
+let energy = 78;
+let energyTimer = 0;
+function updateEnergy(dt) {
+  energyTimer += dt;
+  if (energyTimer > 2) {
+    energyTimer = 0;
+    energy -= 0.08;
+    energy += 0.065;
+    energy = Math.max(0, Math.min(100, energy));
+    document.getElementById('energy-fill').style.width = energy + '%';
+    document.getElementById('energy-label').textContent = `ENERGY: ${energy.toFixed(0)}/100 kWh`;
+  }
+}
+
+let solTime = 6 * 3600;
+function updateClock(dt) {
+  solTime += dt * 60;
+  if (solTime >= 24 * 3600) solTime -= 24 * 3600;
+  const h = Math.floor(solTime / 3600);
+  const m = Math.floor((solTime % 3600) / 60);
+  document.getElementById('time').textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  const dayFactor = Math.max(0, Math.sin((solTime / (24 * 3600)) * Math.PI));
+  sunLight.intensity = 0.4 + dayFactor * 1.8;
+  ambientLight.intensity = 0.15 + dayFactor * 0.25;
+  hemiLight.intensity = 0.1 + dayFactor * 0.2;
+  renderer.toneMappingExposure = 0.4 + dayFactor * 0.5;
+  // Update sky sun position
+  const sunAngle = (solTime / (24 * 3600)) * Math.PI;
+  sunLight.position.set(Math.cos(sunAngle) * 300, Math.sin(sunAngle) * 250, 150);
+  skyMat.uniforms.sunPos.value.copy(sunLight.position);
+  // Temperature variation
+  const temp = -80 + dayFactor * 40 + Math.sin(solTime * 0.001) * 5;
+  document.getElementById('temp').textContent = temp.toFixed(0);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOADING SEQUENCE
+// ═══════════════════════════════════════════════════════════
+let loadProgress = 0;
+const loadInterval = setInterval(() => {
+  loadProgress += 5 + Math.random() * 10;
+  if (loadProgress > 100) loadProgress = 100;
+  document.getElementById('loading-fill').style.width = loadProgress + '%';
+  if (loadProgress >= 100) {
+    clearInterval(loadInterval);
+    setTimeout(() => {
+      document.getElementById('loading').style.display = 'none';
+      showAiMessage("Sistemi online. Benvenuto su Marte, operatore.");
+    }, 500);
+  }
+}, 200);
+
+// ═══════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+const smoothCamPos = new THREE.Vector3();
+const smoothCamLookAt = new THREE.Vector3();
+let initialized = false;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.getElapsedTime();
+
+  // Sky time
+  skyMat.uniforms.time.value = time;
+
+  // ─── Camera ───
+  const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+  const moveSpeed = 5 * dt;
+
+  const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, yaw, 0));
+  const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, yaw, 0));
+
+  if (viewMode === 0) {
+    // Panopticon interior
+    camera.quaternion.setFromEuler(euler);
+    const moveVec = new THREE.Vector3();
+    if (keys['w']) moveVec.add(forward.clone().multiplyScalar(moveSpeed));
+    if (keys['s']) moveVec.add(forward.clone().multiplyScalar(-moveSpeed));
+    if (keys['a']) moveVec.add(right.clone().multiplyScalar(-moveSpeed));
+    if (keys['d']) moveVec.add(right.clone().multiplyScalar(moveSpeed));
+    const np = camera.position.clone().add(moveVec);
+    const dist = Math.sqrt((np.x - panX) ** 2 + (np.z - panZ) ** 2);
+    if (dist < panRadius - 0.6) camera.position.copy(np);
+  } else if (viewMode === 1) {
+    // Third person follow rover
+    const behind = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rover.rotation.y);
+    const targetPos = new THREE.Vector3(
+      rover.position.x + behind.x * 8,
+      rover.position.y + 4,
+      rover.position.z + behind.z * 8
+    );
+    const targetLook = rover.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+
+    if (!initialized) {
+      smoothCamPos.copy(targetPos);
+      smoothCamLookAt.copy(targetLook);
+      initialized = true;
+    }
+    smoothCamPos.lerp(targetPos, 3 * dt);
+    smoothCamLookAt.lerp(targetLook, 5 * dt);
+
+    // Allow rotation offset
+    const rotOffset = new THREE.Vector3(Math.sin(yaw - rover.rotation.y) * 5, pitch * 3, Math.cos(yaw - rover.rotation.y) * 5);
+    camera.position.copy(smoothCamPos).add(rotOffset);
+    camera.lookAt(smoothCamLookAt);
+  } else if (viewMode === 2) {
+    // First person on rover mast
+    const worldMountPos = new THREE.Vector3();
+    roverCamMount.getWorldPosition(worldMountPos);
+    camera.position.copy(worldMountPos);
+    camera.quaternion.setFromEuler(euler);
+    // WASD drives the rover directly
+    if (keys['w']) {
+      const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rover.rotation.y);
+      rover.position.add(fwd.multiplyScalar(roverSpeed * dt));
+      rover.position.y = getTerrainHeight(rover.position.x, rover.position.z);
+      document.getElementById('rover-status').textContent = 'DRIVING';
+    }
+    if (keys['s']) {
+      const bk = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), rover.rotation.y);
+      rover.position.add(bk.multiplyScalar(roverSpeed * 0.5 * dt));
+      rover.position.y = getTerrainHeight(rover.position.x, rover.position.z);
+    }
+    if (keys['a']) rover.rotation.y += 1.5 * dt;
+    if (keys['d']) rover.rotation.y -= 1.5 * dt;
+  }
+
+  // ─── Rover auto-move (modes 0 and 1) ───
+  if (roverHasTarget && roverTarget && viewMode !== 2) {
+    const toTarget = new THREE.Vector3(roverTarget.x - rover.position.x, 0, roverTarget.z - rover.position.z);
+    const dist = toTarget.length();
+    if (dist < 0.5) {
+      roverHasTarget = false;
+      marker.visible = false;
+      marker2.visible = false;
+      energy -= 0.3;
+      document.getElementById('rover-status').textContent = 'IDLE';
+    } else {
+      toTarget.normalize();
+      const tAngle = Math.atan2(toTarget.x, toTarget.z);
+      let cAngle = rover.rotation.y;
+      let diff = tAngle - cAngle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      rover.rotation.y += Math.sign(diff) * Math.min(Math.abs(diff), roverTurnSpeed * dt);
+      rover.position.x += toTarget.x * roverSpeed * dt;
+      rover.position.z += toTarget.z * roverSpeed * dt;
+      rover.position.y = getTerrainHeight(rover.position.x, rover.position.z);
+    }
+  }
+
+  // Wheel spin animation
+  const isMoving = roverHasTarget || (viewMode === 2 && (keys['w'] || keys['s']));
+  if (isMoving) {
+    for (const w of roverWheels) {
+      w.children[0].rotation.x += 5 * dt; // spin tires
+    }
+    // Trail particles
+    trailTimer += dt;
+    if (trailTimer > 0.15) {
+      trailTimer = 0;
+      const tp = trail.geometry.attributes.position;
+      const idx = (trailIdx % trailMax) * 3;
+      tp.array[idx] = rover.position.x + (Math.random() - 0.5) * 0.5;
+      tp.array[idx + 1] = rover.position.y + 0.1;
+      tp.array[idx + 2] = rover.position.z + (Math.random() - 0.5) * 0.5;
+      tp.needsUpdate = true;
+      trailIdx++;
+    }
+  }
+
+  // Marker animation
+  if (marker.visible) {
+    marker.rotation.z = time * 2;
+    marker2.rotation.z = -time * 1.5;
+    marker.scale.setScalar(1 + Math.sin(time * 4) * 0.15);
+    marker2.scale.setScalar(1 + Math.sin(time * 3 + 1) * 0.1);
+  }
+
+  // Dust
+  const dp = dust.geometry.attributes.position;
+  for (let i = 0; i < dustCount; i++) {
+    dp.array[i * 3] += dustSpeeds2[i] * dt * 4;
+    dp.array[i * 3 + 1] += Math.sin(time * 0.5 + i * 0.1) * 0.008;
+    if (dp.array[i * 3] > 250) dp.array[i * 3] = -250;
+  }
+  dp.needsUpdate = true;
+
+  // Haze animation
+  haze.position.y = 2 + Math.sin(time * 0.3) * 0.5;
+  hazeMat.opacity = 0.06 + Math.sin(time * 0.2) * 0.02;
+
+  // Interior light flicker
+  intLight1.intensity = 0.5 + Math.sin(time * 8) * 0.02;
+  intLight2.intensity = 0.2 + Math.sin(time * 5 + 1) * 0.03;
+
+  // Hologram ring spin
+  holoRing.rotation.z = time * 1.5;
+
+  // Systems
+  updateEnergy(dt);
+  updateClock(dt);
+
+  // AI
+  aiTimer += dt;
+  if (aiTimer > 30) {
+    aiTimer = 0;
+    showAiMessage(aiMessages[Math.floor(Math.random() * aiMessages.length)]);
+  }
+
+  // HUD
+  document.getElementById('lat').textContent = (18.65 + rover.position.z * 0.001).toFixed(3);
+  document.getElementById('lon').textContent = (226.2 + rover.position.x * 0.001).toFixed(3);
+  document.getElementById('alt').textContent = rover.position.y.toFixed(1);
+  document.getElementById('wind').textContent = (10 + Math.sin(time * 0.1) * 5).toFixed(0);
+
+  composer.render();
+}
+
+animate();
+
+// Resize
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
